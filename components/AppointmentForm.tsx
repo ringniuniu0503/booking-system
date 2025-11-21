@@ -107,7 +107,7 @@ export const AppointmentForm: React.FC = () => {
     // Using a more subtle UI indication for demo purposes instead of alert if preferred, 
     // but for now, let's put it in the console and an alert for clarity.
     console.log(`OTP Sent: ${mockOtp}`);
-    alert(`【測試模式】您的驗證碼為：${mockOtp}\n(實際應用中會發送簡訊至您的手機)`);
+    alert(`您的驗證碼為：${mockOtp}\n`);
   };
 
   const handleVerifyOtp = (e: React.FormEvent) => {
