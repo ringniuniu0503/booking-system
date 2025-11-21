@@ -28,7 +28,7 @@ const INITIAL_DATA: AppointmentData = {
 };
 
 // TODO: 未來請將您的 LIFF ID 填入此處，例如 '1657xxxxxx-Abcdefgh'
-const LIFF_ID = ''; 
+const LIFF_ID = '2008547505-eyX05E5P'; 
 
 export const AppointmentForm: React.FC = () => {
   const [stage, setStage] = useState<AppStage>(AppStage.VERIFY_PHONE);
