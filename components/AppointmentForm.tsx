@@ -29,8 +29,11 @@ const INITIAL_DATA: AppointmentData = {
   lineUserId: '',
 };
 
-// TODO: 未來請將您的 LIFF ID 填入此處，例如 '1657xxxxxx-Abcdefgh'
+// TODO: 請將您的 LIFF ID 填入此處
 const LIFF_ID = ''; 
+
+// TODO: 請將您的 Google Apps Script 網址填入此處
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyf-VZptSQPtbnGH3DwsCO76nmEQqaUKBZbumUpfRBuQr-aNFOzMcCfCEgBqA74lm9m/exec';
 
 export const AppointmentForm: React.FC = () => {
   const [stage, setStage] = useState<AppStage>(AppStage.VERIFY_PHONE);
@@ -44,6 +47,14 @@ export const AppointmentForm: React.FC = () => {
   const [showOtpInput, setShowOtpInput] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [smsSentStatus, setSmsSentStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  // Date Constraints
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  
+  const maxBirthday = new Date();
+  maxBirthday.setFullYear(maxBirthday.getFullYear() - 10);
+  const maxBirthdayStr = maxBirthday.toISOString().split('T')[0];
 
   // Initialize LIFF
   useEffect(() => {
@@ -82,12 +93,6 @@ export const AppointmentForm: React.FC = () => {
     }
   }, [countdown]);
   
-  // Helper validation functions
-  const validateDate = (dateStr: string): boolean => {
-    // Check if date is selected (browser date input returns YYYY-MM-DD)
-    return !!dateStr;
-  };
-
   const handleSendOtp = () => {
     const phoneRegex = /^09\d{8}$/;
     if (!phoneRegex.test(data.phoneNumber)) {
@@ -102,12 +107,8 @@ export const AppointmentForm: React.FC = () => {
     setShowOtpInput(true);
     setCountdown(60); // 60 seconds cooldown
     
-    // In a real app, this would be an API call
-    // alert(`【系統測試】您的驗證碼是：${mockOtp}`); 
-    // Using a more subtle UI indication for demo purposes instead of alert if preferred, 
-    // but for now, let's put it in the console and an alert for clarity.
     console.log(`OTP Sent: ${mockOtp}`);
-    alert(`您的驗證碼為：${mockOtp}\n`);
+    alert(`【測試模式】您的驗證碼為：${mockOtp}\n(實際應用中會發送簡訊至您的手機)`);
   };
 
   const handleVerifyOtp = (e: React.FormEvent) => {
@@ -127,6 +128,40 @@ export const AppointmentForm: React.FC = () => {
       setSmsSentStatus('sent');
   };
 
+  const saveToGoogleSheets = async (appointmentData: AppointmentData) => {
+    if (!GOOGLE_SCRIPT_URL) {
+      console.warn('Google Script URL not set');
+      return;
+    }
+
+    try {
+      // Transform data for Google Sheets
+      const sheetData = {
+        timestamp: new Date().toISOString(),
+        name: appointmentData.name,
+        phoneNumber: appointmentData.phoneNumber,
+        idNumber: appointmentData.idNumber,
+        birthday: appointmentData.birthday,
+        date: appointmentData.date,
+        timeSlot: appointmentData.timeSlot?.label || '',
+        doctor: appointmentData.doctor?.name || '',
+        visitType: appointmentData.visitType?.label || ''
+      };
+
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors', // Important for Google Apps Script
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(sheetData),
+      });
+      console.log('Data sent to Google Sheets');
+    } catch (error) {
+      console.error('Error saving to Google Sheets:', error);
+    }
+  };
+
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Partial<Record<keyof AppointmentData, string>> = {};
@@ -142,7 +177,10 @@ export const AppointmentForm: React.FC = () => {
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
-      await sendSuccessSMS(); // Trigger simulated SMS
+      // Save to Google Sheets
+      saveToGoogleSheets(data);
+      // Send SMS
+      await sendSuccessSMS(); 
       setStage(AppStage.SUCCESS);
     } else {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -187,7 +225,7 @@ export const AppointmentForm: React.FC = () => {
                     value={data.phoneNumber}
                     onChange={(e) => setData({ ...data, phoneNumber: e.target.value })}
                     disabled={showOtpInput}
-                    className={`w-full pl-10 pr-4 py-3 rounded-xl border ${errors.phoneNumber && !showOtpInput ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:bg-white focus:border-teal-500 outline-none transition-all`}
+                    className={`w-full pl-10 pr-4 h-[52px] appearance-none rounded-xl border ${errors.phoneNumber && !showOtpInput ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:bg-white focus:border-teal-500 outline-none transition-all`}
                     placeholder="0912345678"
                     />
                     <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -206,7 +244,7 @@ export const AppointmentForm: React.FC = () => {
                             maxLength={4}
                             value={otp}
                             onChange={(e) => setOtp(e.target.value)}
-                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-teal-500 outline-none text-center tracking-widest font-bold text-lg"
+                            className="w-full pl-10 pr-4 h-[52px] appearance-none rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-teal-500 outline-none text-center tracking-widest font-bold text-lg"
                             placeholder="- - - -"
                         />
                         <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -249,7 +287,7 @@ export const AppointmentForm: React.FC = () => {
     );
   }
 
-  // 2. Main Form View (Reordered: Personal Info -> Date -> Doctor -> Time -> Type)
+  // 2. Main Form View
   if (stage === AppStage.FILL_FORM) {
     return (
       <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
@@ -268,7 +306,7 @@ export const AppointmentForm: React.FC = () => {
 
           <form onSubmit={handleSubmitForm} className="space-y-6">
             
-             {/* Section 1: Personal Info (Moved to Top) */}
+             {/* Section 1: Personal Info */}
              <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
                 <User className="w-5 h-5 text-teal-500" /> 個人資料
@@ -280,7 +318,7 @@ export const AppointmentForm: React.FC = () => {
                     type="text"
                     value={data.name}
                     onChange={(e) => setData({ ...data, name: e.target.value })}
-                    className={`w-full p-3 rounded-xl border ${errors.name ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
+                    className={`w-full px-4 h-[52px] appearance-none rounded-xl border ${errors.name ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
                     placeholder="請輸入姓名"
                   />
                   {errors.name && <p className="text-rose-500 text-xs mt-1">{errors.name}</p>}
@@ -290,9 +328,10 @@ export const AppointmentForm: React.FC = () => {
                   <label className="block text-xs font-medium text-slate-500 mb-1">出生年月日</label>
                   <input
                     type="date"
+                    max={maxBirthdayStr}
                     value={data.birthday}
                     onChange={(e) => setData({ ...data, birthday: e.target.value })}
-                    className={`w-full p-3 rounded-xl border ${errors.birthday ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
+                    className={`w-full px-4 h-[52px] appearance-none rounded-xl border ${errors.birthday ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
                   />
                   {errors.birthday && <p className="text-rose-500 text-xs mt-1">{errors.birthday}</p>}
                 </div>
@@ -303,7 +342,7 @@ export const AppointmentForm: React.FC = () => {
                       type="text"
                       value={data.idNumber}
                       onChange={(e) => setData({ ...data, idNumber: e.target.value.toUpperCase() })}
-                      className={`w-full pl-10 pr-3 py-3 rounded-xl border ${errors.idNumber ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
+                      className={`w-full pl-10 pr-3 h-[52px] appearance-none rounded-xl border ${errors.idNumber ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
                       placeholder="請輸入身分證字號"
                     />
                     <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -313,7 +352,7 @@ export const AppointmentForm: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 2: Date (Use Calendar Input) */}
+            {/* Section 2: Date */}
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-teal-500" /> 預約日期
@@ -322,10 +361,10 @@ export const AppointmentForm: React.FC = () => {
                 <label className="block text-xs font-medium text-slate-500 mb-1">選擇日期</label>
                 <input
                   type="date"
+                  min={todayStr}
                   value={data.date}
-                  min={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setData({ ...data, date: e.target.value })}
-                  className={`w-full p-3 rounded-xl border ${errors.date ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
+                  className={`w-full px-4 h-[52px] appearance-none rounded-xl border ${errors.date ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
                 />
                 {errors.date && <p className="text-rose-500 text-xs mt-1">{errors.date}</p>}
               </div>
