@@ -10,10 +10,12 @@ import {
   Activity, 
   ChevronRight,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  MessageSquare,
+  Send
 } from 'lucide-react';
 import { DOCTORS, TIME_SLOTS, VISIT_TYPES } from '../constants';
-import { AppointmentData, AppStage, Doctor, TimeSlot, VisitType } from '../types';
+import { AppointmentData, AppStage } from '../types';
 
 const INITIAL_DATA: AppointmentData = {
   phoneNumber: '',
@@ -28,13 +30,20 @@ const INITIAL_DATA: AppointmentData = {
 };
 
 // TODO: 未來請將您的 LIFF ID 填入此處，例如 '1657xxxxxx-Abcdefgh'
-const LIFF_ID = '2008547505-eyX05E5P'; 
+const LIFF_ID = ''; 
 
 export const AppointmentForm: React.FC = () => {
   const [stage, setStage] = useState<AppStage>(AppStage.VERIFY_PHONE);
   const [data, setData] = useState<AppointmentData>(INITIAL_DATA);
   const [errors, setErrors] = useState<Partial<Record<keyof AppointmentData, string>>>({});
   const [isLiffLoggedIn, setIsLiffLoggedIn] = useState(false);
+  
+  // OTP State
+  const [otp, setOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [showOtpInput, setShowOtpInput] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [smsSentStatus, setSmsSentStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
 
   // Initialize LIFF
   useEffect(() => {
@@ -64,37 +73,68 @@ export const AppointmentForm: React.FC = () => {
 
     initLiff();
   }, []);
+
+  // Countdown timer for OTP
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
   
   // Helper validation functions
   const validateDate = (dateStr: string): boolean => {
-    // Accepts YYYY/MM/DD or YYYY/M/D
-    const regex = /^\d{4}\/\d{1,2}\/\d{1,2}$/;
-    if (!regex.test(dateStr)) return false;
-    
-    const [year, month, day] = dateStr.split('/').map(Number);
-    const date = new Date(year, month - 1, day);
-    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+    // Check if date is selected (browser date input returns YYYY-MM-DD)
+    return !!dateStr;
   };
 
-  const handlePhoneVerify = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendOtp = () => {
     const phoneRegex = /^09\d{8}$/;
     if (!phoneRegex.test(data.phoneNumber)) {
-      setErrors({ phoneNumber: '請輸入正確的手機號碼 (09開頭共10碼)' });
+      setErrors({ phoneNumber: '請輸入正確的手機號碼 (09xxxxxxxx)' });
       return;
     }
     setErrors({});
-    setStage(AppStage.FILL_FORM);
+    
+    // Simulate sending OTP
+    const mockOtp = Math.floor(1000 + Math.random() * 9000).toString();
+    setGeneratedOtp(mockOtp);
+    setShowOtpInput(true);
+    setCountdown(60); // 60 seconds cooldown
+    
+    // In a real app, this would be an API call
+    // alert(`【系統測試】您的驗證碼是：${mockOtp}`); 
+    // Using a more subtle UI indication for demo purposes instead of alert if preferred, 
+    // but for now, let's put it in the console and an alert for clarity.
+    console.log(`OTP Sent: ${mockOtp}`);
+    alert(`【測試模式】您的驗證碼為：${mockOtp}\n(實際應用中會發送簡訊至您的手機)`);
   };
 
-  const handleSubmitForm = (e: React.FormEvent) => {
+  const handleVerifyOtp = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp === generatedOtp) {
+        setStage(AppStage.FILL_FORM);
+    } else {
+        setErrors({ phoneNumber: '驗證碼錯誤，請重新輸入' });
+    }
+  };
+
+  const sendSuccessSMS = async () => {
+      setSmsSentStatus('sending');
+      // Simulate API Delay
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      console.log(`Sending confirmation SMS to ${data.phoneNumber}`);
+      setSmsSentStatus('sent');
+  };
+
+  const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     const newErrors: Partial<Record<keyof AppointmentData, string>> = {};
 
-    if (!validateDate(data.date)) newErrors.date = '格式錯誤 (例: 2023/10/25 或 2023/5/3)';
     if (!data.name.trim()) newErrors.name = '請輸入姓名';
-    if (!validateDate(data.birthday)) newErrors.birthday = '格式錯誤 (例: 1990/05/01 或 1990/5/1)';
+    if (!data.birthday) newErrors.birthday = '請選擇出生年月日';
     if (!data.idNumber.trim()) newErrors.idNumber = '請輸入身分證字號';
+    if (!data.date) newErrors.date = '請選擇預約日期';
     if (!data.doctor) newErrors.doctor = '請選擇醫師';
     if (!data.timeSlot) newErrors.timeSlot = '請選擇時段';
     if (!data.visitType) newErrors.visitType = '請選擇診療類型';
@@ -102,15 +142,14 @@ export const AppointmentForm: React.FC = () => {
     setErrors(newErrors);
 
     if (Object.keys(newErrors).length === 0) {
+      await sendSuccessSMS(); // Trigger simulated SMS
       setStage(AppStage.SUCCESS);
     } else {
-      // Scroll to top or first error could be added here
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   const handleRestart = () => {
-    // Keep lineUserId and name if logged in via LIFF
     if (isLiffLoggedIn) {
         setData({
             ...INITIAL_DATA,
@@ -122,9 +161,12 @@ export const AppointmentForm: React.FC = () => {
     }
     setStage(AppStage.VERIFY_PHONE);
     setErrors({});
+    setOtp('');
+    setShowOtpInput(false);
+    setSmsSentStatus('idle');
   };
 
-  // 1. Phone Verification View
+  // 1. Phone Verification View (With OTP)
   if (stage === AppStage.VERIFY_PHONE) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6 animate-fade-in">
@@ -133,39 +175,81 @@ export const AppointmentForm: React.FC = () => {
             <ShieldCheck className="w-8 h-8 text-teal-600" />
           </div>
           <h2 className="text-2xl font-bold text-slate-800 mb-2">身分驗證</h2>
-          <p className="text-slate-500 mb-6 text-sm">為了確保預約權益，請先輸入您的手機號碼進行驗證。</p>
+          <p className="text-slate-500 mb-6 text-sm">請輸入手機號碼並進行簡訊驗證。</p>
           
-          <form onSubmit={handlePhoneVerify} className="space-y-4">
+          <div className="space-y-4">
             <div className="text-left">
               <label className="block text-sm font-medium text-slate-700 mb-1 pl-1">手機號碼</label>
-              <div className="relative">
-                <input
-                  type="tel"
-                  value={data.phoneNumber}
-                  onChange={(e) => setData({ ...data, phoneNumber: e.target.value })}
-                  className={`w-full pl-10 pr-4 py-3 rounded-xl border ${errors.phoneNumber ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:bg-white focus:border-teal-500 outline-none transition-all`}
-                  placeholder="0912345678"
-                  autoFocus
-                />
-                <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <div className="relative flex gap-2">
+                <div className="relative flex-1">
+                    <input
+                    type="tel"
+                    value={data.phoneNumber}
+                    onChange={(e) => setData({ ...data, phoneNumber: e.target.value })}
+                    disabled={showOtpInput}
+                    className={`w-full pl-10 pr-4 py-3 rounded-xl border ${errors.phoneNumber && !showOtpInput ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:bg-white focus:border-teal-500 outline-none transition-all`}
+                    placeholder="0912345678"
+                    />
+                    <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                </div>
               </div>
-              {errors.phoneNumber && <p className="text-rose-500 text-xs mt-1 pl-1">{errors.phoneNumber}</p>}
+              {errors.phoneNumber && !showOtpInput && <p className="text-rose-500 text-xs mt-1 pl-1">{errors.phoneNumber}</p>}
             </div>
+
+            {/* OTP Input Section */}
+            {showOtpInput && (
+                <div className="text-left animate-fade-in">
+                     <label className="block text-sm font-medium text-slate-700 mb-1 pl-1">驗證碼</label>
+                     <div className="relative">
+                        <input
+                            type="text"
+                            maxLength={4}
+                            value={otp}
+                            onChange={(e) => setOtp(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-teal-500 outline-none text-center tracking-widest font-bold text-lg"
+                            placeholder="- - - -"
+                        />
+                        <MessageSquare className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                     </div>
+                     {errors.phoneNumber && showOtpInput && <p className="text-rose-500 text-xs mt-1 pl-1">{errors.phoneNumber}</p>}
+                     <div className="text-center mt-2">
+                        {countdown > 0 ? (
+                            <span className="text-xs text-slate-400">重新發送 ({countdown}s)</span>
+                        ) : (
+                            <button 
+                                onClick={handleSendOtp}
+                                className="text-xs text-teal-600 hover:text-teal-800 font-medium underline"
+                            >
+                                沒收到驗證碼？重新發送
+                            </button>
+                        )}
+                     </div>
+                </div>
+            )}
             
-            <button
-              type="submit"
-              className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
-            >
-              <span>開始預約</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </form>
+            {!showOtpInput ? (
+                <button
+                onClick={handleSendOtp}
+                className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg"
+                >
+                發送驗證碼
+                </button>
+            ) : (
+                <button
+                onClick={handleVerifyOtp}
+                className="w-full bg-teal-800 hover:bg-teal-900 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                >
+                <span>驗證並開始預約</span>
+                <ChevronRight className="w-4 h-4" />
+                </button>
+            )}
+          </div>
         </div>
       </div>
     );
   }
 
-  // 2. Main Form View
+  // 2. Main Form View (Reordered: Personal Info -> Date -> Doctor -> Time -> Type)
   if (stage === AppStage.FILL_FORM) {
     return (
       <div className="h-full overflow-y-auto no-scrollbar bg-slate-50">
@@ -177,33 +261,15 @@ export const AppointmentForm: React.FC = () => {
               填寫預約資料
             </h2>
             <div className="text-xs font-medium bg-teal-100 text-teal-700 px-3 py-1 rounded-full flex items-center gap-1">
-              {isLiffLoggedIn && <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>}
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
               已驗證: {data.phoneNumber}
             </div>
           </div>
 
           <form onSubmit={handleSubmitForm} className="space-y-6">
             
-            {/* Section 1: Date */}
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-teal-500" /> 預約日期
-              </h3>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">日期 (YYYY/MM/DD)</label>
-                <input
-                  type="text"
-                  value={data.date}
-                  onChange={(e) => setData({ ...data, date: e.target.value })}
-                  className={`w-full p-3 rounded-xl border ${errors.date ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
-                  placeholder="例如: 2023/10/25 或 2023/5/3"
-                />
-                {errors.date && <p className="text-rose-500 text-xs mt-1">{errors.date}</p>}
-              </div>
-            </div>
-
-            {/* Section 2: Personal Info */}
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+             {/* Section 1: Personal Info (Moved to Top) */}
+             <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
                 <User className="w-5 h-5 text-teal-500" /> 個人資料
               </h3>
@@ -221,13 +287,12 @@ export const AppointmentForm: React.FC = () => {
                   {isLiffLoggedIn && data.name && <p className="text-teal-500 text-[10px] mt-1">* 已自動帶入 LINE 暱稱</p>}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">出生年月日 (YYYY/MM/DD)</label>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">出生年月日</label>
                   <input
-                    type="text"
+                    type="date"
                     value={data.birthday}
                     onChange={(e) => setData({ ...data, birthday: e.target.value })}
                     className={`w-full p-3 rounded-xl border ${errors.birthday ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
-                    placeholder="例如: 1990/05/01 或 1990/5/1"
                   />
                   {errors.birthday && <p className="text-rose-500 text-xs mt-1">{errors.birthday}</p>}
                 </div>
@@ -245,6 +310,24 @@ export const AppointmentForm: React.FC = () => {
                   </div>
                   {errors.idNumber && <p className="text-rose-500 text-xs mt-1">{errors.idNumber}</p>}
                 </div>
+              </div>
+            </div>
+
+            {/* Section 2: Date (Use Calendar Input) */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+              <h3 className="font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-teal-500" /> 預約日期
+              </h3>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">選擇日期</label>
+                <input
+                  type="date"
+                  value={data.date}
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setData({ ...data, date: e.target.value })}
+                  className={`w-full p-3 rounded-xl border ${errors.date ? 'border-rose-500 bg-rose-50' : 'border-slate-200 bg-slate-50'} focus:border-teal-500 outline-none`}
+                />
+                {errors.date && <p className="text-rose-500 text-xs mt-1">{errors.date}</p>}
               </div>
             </div>
 
@@ -361,6 +444,20 @@ export const AppointmentForm: React.FC = () => {
         
         <div className="p-6 space-y-4">
           <div className="bg-slate-50 p-4 rounded-xl space-y-3 text-sm border border-slate-100">
+            {/* SMS Status Indicator */}
+            {smsSentStatus === 'sending' && (
+                 <div className="flex items-center gap-2 text-teal-600 bg-teal-50 p-2 rounded mb-2 text-xs">
+                     <div className="w-2 h-2 bg-teal-500 rounded-full animate-pulse"></div>
+                     正在發送預約簡訊...
+                 </div>
+            )}
+            {smsSentStatus === 'sent' && (
+                 <div className="flex items-center gap-2 text-green-600 bg-green-50 p-2 rounded mb-2 text-xs border border-green-100">
+                     <Send className="w-3 h-3" />
+                     已發送預約成功簡訊通知
+                 </div>
+            )}
+
             <div className="flex justify-between border-b border-slate-200 pb-2">
               <span className="text-slate-500">手機號碼</span>
               <span className="font-medium text-slate-800">{data.phoneNumber}</span>
